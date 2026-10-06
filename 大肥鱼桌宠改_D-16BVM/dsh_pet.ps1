@@ -731,6 +731,10 @@ public sealed class DshPet : Form {
     bool _touchOnGirl, _touchMoved, _longPressing;
     double _pressT, _pokeWindowT, _annoyedT;
     int _pokeClicks;
+    ToolStripMenuItem _lockItem;
+    bool _positionLocked;
+    bool _petting;
+    double _petT;
     // True from the moment the magnet grabs the bowl until it is eaten. Used to hold
     // off queued charges: while the bowl is being delivered, a fresh charge must wait
     // its turn instead of interrupting the pull.
@@ -1495,6 +1499,18 @@ public sealed class DshPet : Form {
         _sizeItem.DropDownItems.Add(sizeCustom);
         _menu.Items.Add(_sizeItem);
 
+        _lockItem = NewItem(IC_NONE, "\u9501\u5B9A\u4F4D\u7F6E (\u6478\u5934\u6A21\u5F0F)");
+        _lockItem.Click += delegate {
+            _positionLocked = !_positionLocked;
+            SaveState();
+            _dirty = true;
+        };
+        _menu.Items.Add(_lockItem);
+
+        ToolStripMenuItem snapCorner = NewItem(IC_NONE, "\u5438\u9644\u5230\u5C4F\u5E55\u89D2");
+        snapCorner.Click += delegate { SnapToCorner(false); };
+        _menu.Items.Add(snapCorner);
+
         // ---- appearance ----
         // Same radio pattern as the size presets: the current one carries the tick.
         _themeItem = NewItem(IC_THEME, S_THEME);
@@ -1701,6 +1717,7 @@ public sealed class DshPet : Form {
             if (mi != null) mi.Checked = (_sizePx == PresetPx[i]);
         }
         if (_muteItem != null) _muteItem.Checked = _soundEnabled;
+        if (_lockItem != null) _lockItem.Checked = _positionLocked;
         // Menu palette: the current one carries the tick, like the size presets.
         if (_themeItem != null) {
             if (_themeItem.DropDownItems.Count >= 2) {
@@ -1977,7 +1994,7 @@ public sealed class DshPet : Form {
             want = EXPR_CALM;
         } else if (_annoyedT > 0) {
             want = EXPR_CALM;
-        } else if (_longPressing) {
+        } else if (_longPressing || _petting) {
             want = EXPR_NERVOUS;
         } else if (cueRunning) {
             // A cue that is actually playing always wins over the resting/aloof faces.
@@ -3591,7 +3608,10 @@ public sealed class DshPet : Form {
                     _volume = n; volumeRead = true;
                 } else if (k == "sound" && (v == "0" || v == "1")) {
                     _soundEnabled = v == "1"; _soundWanted = _soundEnabled;
-                } else if (k == "theme") {
+                } else if (k == "locked") {
+                    _positionLocked = (v == "1" || v.ToLowerInvariant() == "true");
+                }
+                else if (k == "theme") {
                     // Stored as a word, not a number, so the file stays readable and
                     // a future third palette can be added without renumbering.
                     _darkTheme = (v == "dark");
@@ -3619,7 +3639,8 @@ public sealed class DshPet : Form {
                 "cm=" + _cm.ToString("0.##", CultureInfo.InvariantCulture) + "\r\n" +
                 "volume=" + _volume.ToString(CultureInfo.InvariantCulture) + "\r\n" +
                 "sound=" + (_soundEnabled ? "1" : "0") + "\r\n" +
-                "theme=" + (_darkTheme ? "dark" : "light") + "\r\n",
+                "theme=" + (_darkTheme ? "dark" : "light") + "\r\n" +
+                "locked=" + (_positionLocked ? "1" : "0") + "\r\n",
                 Encoding.ASCII);
         } catch { }
     }
@@ -3862,6 +3883,12 @@ public sealed class DshPet : Form {
                 _touchMoved = false;
                 _pressT = 0;
                 _longPressing = false;
+                if (_positionLocked) {
+                    _petting = true;
+                    _petT = 0;
+                    _dirty = true;
+                    return;
+                }
             }
             _drag = true;
             _snapping = false;
@@ -3880,6 +3907,16 @@ public sealed class DshPet : Form {
     }
 
     protected override void OnMouseMove(MouseEventArgs e) {
+        if (_petting) {
+            _petT += 0.033;
+            if (_petT >= 0.12) {
+                _petT = 0;
+                _headSquashT = 0;
+                SpawnHearts(_headX + _offX, (int)(_h * 0.20) + _offY);
+                _dirty = true;
+            }
+            return;
+        }
         if (_riceGrab != null && _riceGrab.Dragging && !_riceGrab.Fed) {
             Point sp = Cursor.Position;                 // screen pixels
             _riceGrab.X = sp.X - _riceGrabX;
@@ -3916,7 +3953,18 @@ public sealed class DshPet : Form {
     protected override void OnMouseUp(MouseEventArgs e) {
         if (_riceGrab != null && _riceGrab.Dragging) {
             ReleaseBowl();
-        } else if (_drag) {
+        }
+        if (_petting) {
+            _petting = false;
+            _touchOnGirl = false;
+            _touchMoved = false;
+            _longPressing = false;
+            _happyT = 2.0;
+            _headSquashT = 0;
+            _dirty = true;
+            return;
+        }
+        if (_drag) {
             _drag = false;
             if (_touchOnGirl && !_touchMoved) {
                 if (_longPressing) {
@@ -3938,7 +3986,8 @@ public sealed class DshPet : Form {
                     }
                 }
             } else {
-                SnapToCorner(false);
+                // Free placement: stays wherever dragged!
+                _dirty = true;
             }
             _touchOnGirl = false;
             _touchMoved = false;

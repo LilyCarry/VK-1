@@ -2734,6 +2734,21 @@ public sealed class DshPet : Form {
         }
     }
 
+    void SpawnPetHeart(int cx, int cy) {
+        if (_heartArt == null || _hearts.Count >= 8) return;
+        Floater f = new Floater();
+        f.Text = "";
+        f.X = cx + _rng.Next(-_w / 14, _w / 14);
+        f.Y = cy - _rng.Next(0, _h / 16);
+        f.Hearts = true;
+        f.HeartSize = (int)Math.Round(Math.Max(12.0, _w * (0.050 + 0.020 * _rng.NextDouble())));
+        f.HeartPhase = _rng.NextDouble() * 6.283;
+        f.Dur = 0.90 + _rng.NextDouble() * 0.30;
+        f.Drift = (_rng.NextDouble() - 0.5) * 16.0;
+        _hearts.Add(f);
+        _dirty = true;
+    }
+
     void SpawnHearts(int cx, int cy) {
         int n = 5 + _rng.Next(3);
         for (int i = 0; i < n; i++) {
@@ -3886,6 +3901,8 @@ public sealed class DshPet : Form {
                 if (_positionLocked) {
                     _petting = true;
                     _petT = 0;
+                    SpawnPetHeart(_headX + _offX, (int)(_h * 0.20) + _offY);
+                    _headSquashT = 0;
                     _dirty = true;
                     return;
                 }
@@ -3908,13 +3925,6 @@ public sealed class DshPet : Form {
 
     protected override void OnMouseMove(MouseEventArgs e) {
         if (_petting) {
-            _petT += 0.033;
-            if (_petT >= 0.12) {
-                _petT = 0;
-                _headSquashT = 0;
-                SpawnHearts(_headX + _offX, (int)(_h * 0.20) + _offY);
-                _dirty = true;
-            }
             return;
         }
         if (_riceGrab != null && _riceGrab.Dragging && !_riceGrab.Fed) {
@@ -3980,7 +3990,7 @@ public sealed class DshPet : Form {
                         _dirty = true;
                     } else {
                         _headSquashT = 0;
-                        SpawnHearts(_headX + _offX, (int)(_h * 0.20) + _offY);
+                        SpawnPetHeart(_headX + _offX, (int)(_h * 0.20) + _offY);
                         _happyT = 1.5;
                         _dirty = true;
                     }
@@ -4772,6 +4782,17 @@ public sealed class DshPet : Form {
                 _pressT += dt;
                 if (_pressT >= 0.35 && !_longPressing) {
                     _longPressing = true;
+                    _dirty = true;
+                }
+            }
+            if (_petting) {
+                _petT += dt;
+                if (_petT >= 0.65) {
+                    _petT = 0;
+                    SpawnPetHeart(_headX + _offX, (int)(_h * 0.20) + _offY);
+                    if (_headSquashT >= HeadSquashDur * 0.7) {
+                        _headSquashT = 0;
+                    }
                     _dirty = true;
                 }
             }

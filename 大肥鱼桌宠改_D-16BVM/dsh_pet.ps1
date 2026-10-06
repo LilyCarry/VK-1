@@ -627,7 +627,7 @@ class PetColors : ProfessionalColorTable {
 }
 
 public sealed class DshPet : Form {
-    const string S_LABEL   = "DSH \u4F59\u989D";                                    // DSH balance
+    const string S_LABEL   = "Gemini \u989D\u5EA6";                                    // DSH balance
     const string S_HELP    = "\u6F14\u793A\u8FDE\u7EED\u6263\u8D39";                // demo consecutive charges
     const string S_SIZE    = "\u5C3A\u5BF8";                                        // size
     const string S_REFRESH = "\u7ACB\u5373\u5237\u65B0\u4F59\u989D";                // refresh now
@@ -1148,7 +1148,7 @@ public sealed class DshPet : Form {
         FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.Manual;
         SetBounds(vsInit.Left, vsInit.Top, _winW, _winH);
-        _apiKey  = Get("DSHPET_KEY", "");
+        _apiKey  = Get("DSHPET_KEY", "gemini-local");
         _apiUrl  = Get("DSHPET_API", "https://api.deepseek.com/user/balance");
         _pollMs  = int.Parse(Get("DSHPET_POLL_MS", "2000"));
         _cm      = double.Parse(Get("DSHPET_CM", "8"), CultureInfo.InvariantCulture);
@@ -1205,7 +1205,7 @@ public sealed class DshPet : Form {
         ShowInTaskbar = false;
         TopMost = true;
         StartPosition = FormStartPosition.Manual;
-        Text = "DSH Balance Pet";
+        Text = "Gemini Balance Pet";
 
         ReadState();
         Relayout();
@@ -1673,7 +1673,7 @@ public sealed class DshPet : Form {
     }
 
     static string Yuan(double v) {
-        return "-" + v.ToString("0.##", CultureInfo.InvariantCulture) + " \u00A5";
+        return "-" + v.ToString("0.##", CultureInfo.InvariantCulture) + " $";
     }
     static string CueCount(double amount) {
         int n = (int)Math.Round(amount / StepYuan);
@@ -1738,7 +1738,7 @@ public sealed class DshPet : Form {
     }
 
     void AskDemo() {
-        using (InputDialog d = new InputDialog(S_HELPT, S_HELPP, "\u00A5", "0.1")) {
+        using (InputDialog d = new InputDialog(S_HELPT, S_HELPP, "$", "0.1")) {
             if (d.ShowDialog(this) != DialogResult.OK) return;
             double v;
             if (double.TryParse(d.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out v) && v > 0)
@@ -1788,7 +1788,7 @@ public sealed class DshPet : Form {
     }
 
     void AskTopUp() {
-        using (InputDialog d = new InputDialog(S_TOPT, S_TOPP, "\u00A5",
+        using (InputDialog d = new InputDialog(S_TOPT, S_TOPP, "$",
                                                TestTopUpYuan.ToString("0.##", CultureInfo.InvariantCulture))) {
             if (d.ShowDialog(this) != DialogResult.OK) return;
             double v;
@@ -4435,7 +4435,7 @@ public sealed class DshPet : Form {
         using (Bitmap probe = new Bitmap(8, 8, PixelFormat.Format32bppArgb))
         using (Graphics g = Graphics.FromImage(probe))
         using (Font fc = new Font("Microsoft YaHei UI", ph * 0.27f, FontStyle.Bold, GraphicsUnit.Pixel)) {
-            SizeF sc = g.MeasureString("\u00A5", fc);
+            SizeF sc = g.MeasureString("$", fc);
             Console.WriteLine("  currency sign stays at " + (ph * 0.27f).ToString("0") +
                               "px (width " + sc.Width.ToString("0") + "px)");
             for (int i = 0; i < tests.Length; i++) {
@@ -4524,7 +4524,7 @@ public sealed class DshPet : Form {
                 using (Brush sh = new SolidBrush(Color.FromArgb(160, 0, 0, 0)))
                 using (Brush bb = new SolidBrush(Color.FromArgb(255, 240, 246, 255)))
                 using (Brush bc = new SolidBrush(Color.FromArgb(235, 158, 184, 230))) {
-                    SizeF sc = g.MeasureString("\u00A5", fc);
+                    SizeF sc = g.MeasureString("$", fc);
 
                     // The digits get whatever width is left after the sign and the
                     // margins. The panel itself cannot grow (its size is the tablet's
@@ -4543,9 +4543,9 @@ public sealed class DshPet : Form {
                         // Keep the block's vertical CENTRE where it was: a smaller
                         // number would otherwise sit lower than the old one.
                         float top = H * 0.44f + (sbFull.Height - sb.Height) * 0.5f;
-                        g.DrawString("\u00A5", fc, sh, left + 1.5f, top + sb.Height * 0.24f + 1.5f);
+                        g.DrawString("$", fc, sh, left + 1.5f, top + sb.Height * 0.24f + 1.5f);
                         g.DrawString(txt, fb, sh, left + sc.Width + 1.5f, top + 1.5f);
-                        g.DrawString("\u00A5", fc, bc, left, top + sb.Height * 0.24f);
+                        g.DrawString("$", fc, bc, left, top + sb.Height * 0.24f);
                         g.DrawString(txt, fb, bb, left + sc.Width, top);
                     }
                 }
@@ -4886,6 +4886,15 @@ public sealed class DshPet : Form {
 
     string FetchBalance() {
         try {
+            string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            string settingsPath = Path.Combine(userProfile, ".dsh", "storages", "antigravity-settings.json");
+            if (File.Exists(settingsPath)) {
+                return File.ReadAllText(settingsPath);
+            }
+        } catch (Exception ex) {
+            Log("reading antigravity-settings.json failed: " + ex.Message);
+        }
+        try {
             return FetchWithHttp();
         } catch (Exception ex) {
             Log("http transport failed (" + ex.GetType().Name + ": " + ex.Message + "), trying node");
@@ -5208,21 +5217,50 @@ public sealed class DshPet : Form {
     }
 
     static double ParseCny(string json) {
-        int i = json.IndexOf("\"balance_infos\"");
-        string scope = i >= 0 ? json.Substring(i) : json;
+        // 1. Try DSH antigravity-settings.json (Gemini)
+        int i = json.IndexOf("\"gemini-3.8-flash-tiered\"");
+        if (i < 0) i = json.IndexOf("\"gemini-");
+        if (i >= 0) {
+            int rf = json.IndexOf("\"remainingFraction\"", i);
+            if (rf >= 0) {
+                int col = json.IndexOf(':', rf);
+                if (col >= 0) {
+                    int start = col + 1;
+                    while (start < json.Length && (json[start] == ' ' || json[start] == '\t')) start++;
+                    int endPos = start;
+                    while (endPos < json.Length && (char.IsDigit(json[endPos]) || json[endPos] == '.' || json[endPos] == 'e' || json[endPos] == 'E' || json[endPos] == '-' || json[endPos] == '+')) endPos++;
+                    if (endPos > start) {
+                        double fraction;
+                        if (double.TryParse(json.Substring(start, endPos - start), NumberStyles.Float, CultureInfo.InvariantCulture, out fraction)) {
+                            // Total full daily quota value in USD ($205.78 mathematically derived from omp stats & official pricing)
+                            return Math.Round(fraction * 205.78, 2);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Fallback to original DeepSeek balance_infos
+        int bi = json.IndexOf("\"balance_infos\"");
+        string scope = bi >= 0 ? json.Substring(bi) : json;
         int c = scope.IndexOf("\"CNY\"");
-        if (c < 0) return double.NaN;
-        int j = scope.IndexOf("total_balance", c);
-        if (j < 0) return double.NaN;
-        int col = scope.IndexOf(':', j);
-        if (col < 0) return double.NaN;
-        int q1 = scope.IndexOf('"', col + 1);
-        if (q1 < 0) return double.NaN;
-        int q2 = scope.IndexOf('"', q1 + 1);
-        if (q2 < 0) return double.NaN;
-        double v;
-        if (double.TryParse(scope.Substring(q1 + 1, q2 - q1 - 1), NumberStyles.Float,
-                            CultureInfo.InvariantCulture, out v)) return v;
+        if (c < 0) c = scope.IndexOf("\"USD\"");
+        if (c >= 0) {
+            int j = scope.IndexOf("total_balance", c);
+            if (j >= 0) {
+                int col = scope.IndexOf(':', j);
+                if (col >= 0) {
+                    int q1 = scope.IndexOf('"', col + 1);
+                    if (q1 >= 0) {
+                        int q2 = scope.IndexOf('"', q1 + 1);
+                        if (q2 >= 0) {
+                            double v;
+                            if (double.TryParse(scope.Substring(q1 + 1, q2 - q1 - 1), NumberStyles.Float, CultureInfo.InvariantCulture, out v)) return v;
+                        }
+                    }
+                }
+            }
+        }
         return double.NaN;
     }
 

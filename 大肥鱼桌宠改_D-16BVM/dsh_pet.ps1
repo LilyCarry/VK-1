@@ -4898,12 +4898,47 @@ public sealed class DshPet : Form {
     string FetchBalance() {
         try {
             string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            string sessDir = Path.Combine(userProfile, ".dsh", "storages", "session_projcache", "sessions");
+            if (Directory.Exists(sessDir)) {
+                string[] files = Directory.GetFiles(sessDir, "*.json");
+                if (files.Length > 0) {
+                    double totalCost = 0.0;
+                    bool foundTokens = false;
+                    foreach (string file in files) {
+                        try {
+                            string content;
+                            using (FileStream fs = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                            using (StreamReader sr = new StreamReader(fs, System.Text.Encoding.UTF8)) {
+                                content = sr.ReadToEnd();
+                            }
+                            int tuIdx = content.IndexOf("\"tokenUsage\"");
+                            if (tuIdx >= 0) {
+                                int totIdx = content.IndexOf("\"totals\"", tuIdx);
+                                if (totIdx >= 0) {
+                                    double inp = ExtractJsonNumber(content, "\"uncachedInputTokens\"", totIdx);
+                                    double outp = ExtractJsonNumber(content, "\"outputTokens\"", totIdx);
+                                    double cRead = ExtractJsonNumber(content, "\"cacheReadTokens\"", totIdx);
+                                    // Gemini 3.8 Flash Pricing: input $0.75/1M, output $3.75/1M, cacheRead $0.075/1M
+                                    double c = (inp * 0.75 + outp * 3.75 + cRead * 0.075) / 1000000.0;
+                                    totalCost += c;
+                                    foundTokens = true;
+                                }
+                            }
+                        } catch { }
+                    }
+                    if (foundTokens) {
+                        double bal = Math.Max(0.0, Math.Round(205.78 - totalCost, 2));
+                        return "{\"balance\":" + bal.ToString("0.00", CultureInfo.InvariantCulture) + "}";
+                    }
+                }
+            }
+
             string settingsPath = Path.Combine(userProfile, ".dsh", "storages", "antigravity-settings.json");
             if (File.Exists(settingsPath)) {
                 return File.ReadAllText(settingsPath);
             }
         } catch (Exception ex) {
-            Log("reading antigravity-settings.json failed: " + ex.Message);
+            Log("fetching local DSH session failed: " + ex.Message);
         }
         try {
             return FetchWithHttp();
@@ -4911,6 +4946,23 @@ public sealed class DshPet : Form {
             Log("http transport failed (" + ex.GetType().Name + ": " + ex.Message + "), trying node");
         }
         return FetchWithNode();
+    }
+
+    static double ExtractJsonNumber(string s, string key, int startFrom) {
+        int idx = s.IndexOf(key, startFrom);
+        if (idx < 0) return 0.0;
+        int col = s.IndexOf(':', idx);
+        if (col < 0) return 0.0;
+        int start = col + 1;
+        while (start < s.Length && (s[start] == ' ' || s[start] == '\t' || s[start] == '\r' || s[start] == '\n')) start++;
+        int end = start;
+        while (end < s.Length && (char.IsDigit(s[end]) || s[end] == '.' || s[end] == '-' || s[end] == '+')) end++;
+        if (end > start) {
+            double v;
+            if (double.TryParse(s.Substring(start, end - start), NumberStyles.Float, CultureInfo.InvariantCulture, out v))
+                return v;
+        }
+        return 0.0;
     }
 
     string FetchWithHttp() {
@@ -5228,7 +5280,21 @@ public sealed class DshPet : Form {
     }
 
     static double ParseCny(string json) {
-        // 1. Try DSH antigravity-settings.json (Gemini)
+        // 1. Direct parsed balance from live session
+        int bIdx = json.IndexOf("\"balance\":");
+        if (bIdx >= 0) {
+            int s = bIdx + 10;
+            while (s < json.Length && (json[s] == ' ' || json[s] == '\t')) s++;
+            int e = s;
+            while (e < json.Length && (char.IsDigit(json[e]) || json[e] == '.' || json[e] == '-')) e++;
+            if (e > s) {
+                double val;
+                if (double.TryParse(json.Substring(s, e - s), NumberStyles.Float, CultureInfo.InvariantCulture, out val))
+                    return val;
+            }
+        }
+
+        // 2. Try DSH antigravity-settings.json (Gemini)
         int i = json.IndexOf("\"gemini-3.8-flash-tiered\"");
         if (i < 0) i = json.IndexOf("\"gemini-");
         if (i >= 0) {
@@ -5251,7 +5317,7 @@ public sealed class DshPet : Form {
             }
         }
 
-        // 2. Fallback to original DeepSeek balance_infos
+        // 3. Fallback to original DeepSeek balance_infos
         int bi = json.IndexOf("\"balance_infos\"");
         string scope = bi >= 0 ? json.Substring(bi) : json;
         int c = scope.IndexOf("\"CNY\"");

@@ -728,6 +728,9 @@ public sealed class DshPet : Form {
     //   _bowlWait : how long the current bowl has been lying uncollected; the pet
     //               turns aloof and the radar lock appears once it passes BowlWaitSec.
     double _nervousT, _happyT, _bowlWait;
+    bool _touchOnGirl, _touchMoved, _longPressing;
+    double _pressT, _pokeWindowT, _annoyedT;
+    int _pokeClicks;
     // True from the moment the magnet grabs the bowl until it is eaten. Used to hold
     // off queued charges: while the bowl is being delivered, a fresh charge must wait
     // its turn instead of interrupting the pull.
@@ -1972,6 +1975,10 @@ public sealed class DshPet : Form {
         // is why the calm branch is skipped in that case.
         if (HeadPotOn && !anyBowl) {
             want = EXPR_CALM;
+        } else if (_annoyedT > 0) {
+            want = EXPR_CALM;
+        } else if (_longPressing) {
+            want = EXPR_NERVOUS;
         } else if (cueRunning) {
             // A cue that is actually playing always wins over the resting/aloof faces.
             want = EXPR_NERVOUS;
@@ -3850,6 +3857,12 @@ public sealed class DshPet : Form {
                 KnockPotOff();
                 return;
             }
+            if (GirlPixelSolid(e.X, e.Y)) {
+                _touchOnGirl = true;
+                _touchMoved = false;
+                _pressT = 0;
+                _longPressing = false;
+            }
             _drag = true;
             _snapping = false;
             _dragStart = Cursor.Position;
@@ -3883,11 +3896,12 @@ public sealed class DshPet : Form {
             // and made a falling bowl stutter (measured: 195 ms per tick).
             _dirty = true;
         } else if (_drag) {
-            // The window cannot move (it is the whole screen), so dragging the girl
-            // moves the widget inside it. Clamped to the virtual screen so she can
-            // never be pushed out of view.
             Rectangle vs2 = SystemInformation.VirtualScreen;
             Point p = Cursor.Position;
+            if (Math.Abs(p.X - _dragStart.X) > 6 || Math.Abs(p.Y - _dragStart.Y) > 6) {
+                _touchMoved = true;
+                _longPressing = false;
+            }
             _offX = _offStart.X + (p.X - _dragStart.X);
             _offY = _offStart.Y + (p.Y - _dragStart.Y);
             if (_offX < 0) _offX = 0;
@@ -3904,7 +3918,32 @@ public sealed class DshPet : Form {
             ReleaseBowl();
         } else if (_drag) {
             _drag = false;
-            SnapToCorner(false);        // release -> fly back to the bottom-left
+            if (_touchOnGirl && !_touchMoved) {
+                if (_longPressing) {
+                    _headSquashT = 0;
+                    _dirty = true;
+                } else {
+                    _pokeClicks++;
+                    _pokeWindowT = 2.5;
+                    if (_pokeClicks >= 5) {
+                        _annoyedT = 4.0;
+                        _pokeClicks = 0;
+                        _headSquashT = 0;
+                        _dirty = true;
+                    } else {
+                        _headSquashT = 0;
+                        SpawnHearts(_headX + _offX, (int)(_h * 0.20) + _offY);
+                        _happyT = 1.5;
+                        _dirty = true;
+                    }
+                }
+            } else {
+                SnapToCorner(false);
+            }
+            _touchOnGirl = false;
+            _touchMoved = false;
+            _longPressing = false;
+            _pressT = 0;
         }
         base.OnMouseUp(e);
     }
@@ -4674,6 +4713,19 @@ public sealed class DshPet : Form {
 
             double dt = _timer.Interval / 1000.0;
             bool anim = false;
+
+            if (_pokeWindowT > 0) {
+                _pokeWindowT -= dt;
+                if (_pokeWindowT <= 0) _pokeClicks = 0;
+            }
+            if (_annoyedT > 0) _annoyedT -= dt;
+            if (_touchOnGirl && !_touchMoved) {
+                _pressT += dt;
+                if (_pressT >= 0.35 && !_longPressing) {
+                    _longPressing = true;
+                    _dirty = true;
+                }
+            }
 
             if (_snapping) {
                 _snapT += dt / 0.16;

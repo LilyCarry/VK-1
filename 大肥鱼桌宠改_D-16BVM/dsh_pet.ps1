@@ -4211,6 +4211,7 @@ public sealed class DshPet : Form {
         // The pad also has to cover the radar nameplate, which reaches well outside
         // the bowl (labels to the right, the ring below). Forgetting this leaves
         // green trails behind a moving bowl.
+        Rectangle vsErase = SystemInformation.VirtualScreen;
         for (int i = 0; i < _rices.Count; i++) {
             Rice rc = _rices[i];
             double rad = Math.Max(_riceArt.Width, _riceArt.Height) * 0.95 + 14;
@@ -4218,7 +4219,9 @@ public sealed class DshPet : Form {
             // describes one of them, so the others would be erased with too small a pad
             // and their labels would streak.
             if (rc.Blp.On && rc.Blp.S > 0) rad = rc.Blp.S * 1.6;
-            Rectangle rr = new Rectangle((int)Math.Round(rc.X - rad), (int)Math.Round(rc.Y + rc.R - rad),
+            double cx = rc.X - vsErase.Left;
+            double cy = (rc.OnHead ? rc.Y : rc.Y + rc.R) - vsErase.Top;
+            Rectangle rr = new Rectangle((int)Math.Round(cx - rad), (int)Math.Round(cy - rad),
                                          (int)Math.Round(rad * 2), (int)Math.Round(rad * 2));
             _paintRects.Add(rr);
             MarkDirty(rr);

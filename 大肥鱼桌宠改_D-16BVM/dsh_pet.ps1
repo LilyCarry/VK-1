@@ -2665,20 +2665,20 @@ public sealed class DshPet : Form {
             return;
         }
         Rectangle vs = SystemInformation.VirtualScreen;
+        Screen curScreen = Screen.FromPoint(new Point(vs.Left + _offX + _w / 2, vs.Top + _offY + _h / 2));
+        if (curScreen == null) curScreen = Screen.PrimaryScreen;
+        Rectangle wa = curScreen.WorkingArea;
+
         Rice r = new Rice();
         r.R = _riceArt.Width * 0.42;
         r.Amount = amount;
-        // Falls in from the TOP-RIGHT CORNER OF THE SCREEN and lands on the bottom
-        // of the screen. X/Y are SCREEN pixels; DrawRiceArt converts them into this
-        // window's canvas, which is why the bowl can start far outside the widget.
-        // Extra bowls are nudged apart so a burst does not stack into one pile.
-        r.X = vs.Right - r.R * 1.2 - _rices.Count * r.R * 0.5;
-        r.Y = vs.Top - r.R * 1.2;
+        // Falls in from top-right of the screen where the pet is currently located
+        r.X = wa.Right - r.R * 1.2 - _rices.Count * r.R * 0.5;
+        r.Y = wa.Top - r.R * 1.2;
         r.VX = -120;                            // drifts left as it falls
         r.VY = 40;
         r.Rot = 0;
-        // Falling in from above the top edge: a full-height drop, so the top tier.
-        r.MaxBounces = BouncesForDrop(vs.Height);
+        r.MaxBounces = BouncesForDrop(wa.Height);
         r.Art = _riceArt;
         _rices.Add(r);
         _rice = r;                              // the newest one is the active one
@@ -2826,7 +2826,9 @@ public sealed class DshPet : Form {
         p.X = x;
         p.Y = y;
         p.VX = 0; p.VY = 0;                           // it appears, it does not fly
-        p.MaxBounces = BouncesForDrop(Math.Max(0, SystemInformation.VirtualScreen.Bottom - y));
+        Screen pScreen = Screen.FromPoint(new Point((int)x, (int)y));
+        double potFloor = pScreen != null ? pScreen.WorkingArea.Bottom : SystemInformation.VirtualScreen.Bottom;
+        p.MaxBounces = BouncesForDrop(Math.Max(0, potFloor - y));
         _rices.Add(p);
         _dirty = true;
         Log("iron pot dropped at (" + x.ToString("0") + "," + y.ToString("0") + ")");
@@ -3095,7 +3097,12 @@ public sealed class DshPet : Form {
                 r.X += r.VX * dt;
                 r.Y += r.VY * dt;
 
-                double floor = vs.Bottom - r.R;      // the SCREEN floor
+                Screen bScreen = Screen.FromPoint(new Point((int)r.X, (int)r.Y));
+                if (bScreen == null) {
+                    bScreen = Screen.FromPoint(new Point(vs.Left + _offX + _w / 2, vs.Top + _offY + _h / 2));
+                    if (bScreen == null) bScreen = Screen.PrimaryScreen;
+                }
+                double floor = bScreen.WorkingArea.Bottom - r.R;      // the SCREEN floor
                 if (!r.LandedLogged && Math.Abs(r.VY) < 200 && r.Y > floor - 400) {
                     r.LandedLogged = true;
                     Log("bowl landing: y=" + r.Y.ToString("0") + " floor=" + floor.ToString("0") +
@@ -3221,7 +3228,9 @@ public sealed class DshPet : Form {
     // top-left) for ~60ms each time a bowl dropped.
     void SyncWindowModeInternal() {
         Rectangle vs = SystemInformation.VirtualScreen;
-        Rectangle wa = Screen.PrimaryScreen.WorkingArea;
+        Screen curScreen = Screen.FromPoint(new Point(vs.Left + _offX + _w / 2, vs.Top + _offY + _h / 2));
+        if (curScreen == null) curScreen = Screen.PrimaryScreen;
+        Rectangle wa = curScreen.WorkingArea;
         _winW = vs.Width; _winH = vs.Height;
         // Keep the window pinned to the virtual screen's origin: the canvas is indexed
         // in screen coordinates minus _offX/_offY, so the window origin must stay put.
@@ -3524,7 +3533,9 @@ public sealed class DshPet : Form {
     // longer moves (it is permanently screen-sized), so this animates _offX/_offY.
     void SnapToCorner(bool immediate) {
         Rectangle vs = SystemInformation.VirtualScreen;
-        Rectangle wa = Screen.PrimaryScreen.WorkingArea;
+        Screen curScreen = Screen.FromPoint(new Point(vs.Left + _offX + _w / 2, vs.Top + _offY + _h / 2));
+        if (curScreen == null) curScreen = Screen.PrimaryScreen;
+        Rectangle wa = curScreen.WorkingArea;
         Point target = new Point(wa.Left - vs.Left, Math.Max(0, wa.Bottom - vs.Top - _h));
         if (immediate) {
             _offX = target.X; _offY = target.Y;

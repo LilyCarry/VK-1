@@ -2283,7 +2283,8 @@ public sealed class DshPet : Form {
         // Palette straight from the reference: one green, nothing else.
         Color green = Color.FromArgb(255, 0, 255, 8);
 
-        double cx = bl.Cx, cy = bl.Cy;           // bracket centre = bowl centre
+        Rectangle vs = SystemInformation.VirtualScreen;
+        double cx = bl.Cx - vs.Left, cy = bl.Cy - vs.Top;
         double x0 = cx - S / 2, y0 = cy - S / 2, x1 = cx + S / 2, y1 = cy + S / 2;
 
         SmoothingMode oldSm = g.SmoothingMode;
@@ -2844,11 +2845,12 @@ public sealed class DshPet : Form {
     // by hand in the placement tool on the desktop, over the real calm sprite, and
     // pasted the numbers back. Do not "tidy" them.
     Point IronHeadAnchor() {
+        Rectangle vs = SystemInformation.VirtualScreen;
         Bitmap art = _ironHeadArt != null ? _ironHeadArt : _ironArt;
         double w = art != null ? art.Width : _w * 0.7391;
         double h = art != null ? art.Height : _w * 0.2629;
-        double cx = _offX + _w * 0.5558;
-        double rimY = _offY + _w * 0.3639;
+        double cx = vs.Left + _offX + _w * 0.5558;
+        double rimY = vs.Top + _offY + _w * 0.3639;
         return new Point((int)Math.Round(cx), (int)Math.Round(rimY - h / 2.0));
     }
 
@@ -2859,9 +2861,10 @@ public sealed class DshPet : Form {
         if (!p.Iron || p.OnHead || p.HeadFalling || p.Fed) return false;
         if (p.VY < -60) return false;                 // thrown up and away: not now
         // Loose art is positioned by its centre, so the rim is half a height below it.
+        Rectangle vs = SystemInformation.VirtualScreen;
         double rimX = p.X;
         double rimY = p.Y + (p.Art != null ? p.Art.Height / 2.0 : p.R);
-        double cx = _offX + _w * 0.5558, cy = _offY + _w * 0.3639;
+        double cx = vs.Left + _offX + _w * 0.5558, cy = vs.Top + _offY + _w * 0.3639;
         double halfW = _w * 0.26, halfH = _w * 0.18;
         return rimX > cx - halfW && rimX < cx + halfW &&
                rimY > cy - halfH && rimY < cy + halfH;
@@ -3312,10 +3315,13 @@ public sealed class DshPet : Form {
         // The map and the canvas are kept the same size; if they ever disagree
         // (a stale map from before a resize) just refuse rather than index wildly.
         if (_canvas == null || _charHitMap.Length != _canvas.Width * _canvas.Height) return false;
+        Rectangle vs = SystemInformation.VirtualScreen;
         int cw = _canvas.Width, ch = _canvas.Height;
         double hw = _riceArt.Width / 2.0;
-        int x0 = (int)Math.Round(bowl.X - hw), x1 = (int)Math.Round(bowl.X + hw);
-        int y0 = (int)Math.Round(bowl.Y - hw), y1 = (int)Math.Round(bowl.Y + hw);
+        double canvasX = bowl.X - vs.Left;
+        double canvasY = bowl.Y - vs.Top;
+        int x0 = (int)Math.Round(canvasX - hw), x1 = (int)Math.Round(canvasX + hw);
+        int y0 = (int)Math.Round(canvasY - hw), y1 = (int)Math.Round(canvasY + hw);
         if (x0 < 0) x0 = 0;
         if (y0 < 0) y0 = 0;
         if (x1 > cw - 1) x1 = cw - 1;
@@ -3377,14 +3383,13 @@ public sealed class DshPet : Form {
         // deduction the girl juddered and the pot stayed nailed in place - the same
         // "readout does not follow the sprite" mismatch the tablet digits had. Loose
         // bowls are left alone: they are separate physics objects and should sit still.
+        Rectangle vs = SystemInformation.VirtualScreen;
         float sxo = r.OnHead ? (float)_shakeX : 0f;
         float syo = r.OnHead ? (float)_shakeY : 0f;
-        float cx = (float)r.X + sxo;
-        // Loose props are anchored on their bottom edge (so they sit on the floor);
-        // a pot on her head is anchored on its art centre, matching IronHeadAnchor.
+        float cx = (float)(r.X - vs.Left) + sxo;
         double baseYd = r.OnHead
-            ? (double)r.Y + syo
-            : (double)(r.Y + r.R) + syo;
+            ? (double)(r.Y - vs.Top) + syo
+            : (double)(r.Y - vs.Top + r.R) + syo;
         // Follow the girl's head-squash. She is drawn compressed about the widget's
         // bottom edge, so anything bolted to her has to compress about the same line -
         // otherwise the pot stays put while she dips, which is the desync the user saw
@@ -3788,24 +3793,18 @@ public sealed class DshPet : Form {
     // desktop "solid" and ate every click. Iterates every bowl so each one can be
     // picked up, and returns which one so the grab can bind to it.
     Rice BowlAt(int cx, int cy) {
-        // Client coords == screen coords (window origin is the screen origin) and the
-        // bowl is in screen pixels, so no offset conversion is needed here.
+        Rectangle vs = SystemInformation.VirtualScreen;
+        double screenX = vs.Left + cx;
+        double screenY = vs.Top + cy;
         for (int i = _rices.Count - 1; i >= 0; i--) {
             Rice r0 = _rices[i];
-            if (r0.Fed) continue;
-            // A pot worn on her head is not grabbable: it is removed by double-clicking
-            // her head instead (see DoubleClickOnHead), and letting it be dragged off
-            // would fight with that gesture.
-            if (r0.OnHead) continue;
-            // Each bowl is measured against ITS OWN art: the iron pot is a wide, shallow
-            // basin, so the rice bowl's square width would give it a hit circle far
-            // larger than the metal.
+            if (r0.Fed || r0.OnHead) continue;
             double hw = r0.Art != null ? r0.Art.Width / 2.0
                                        : (_riceArt != null ? _riceArt.Width / 2.0 : 0);
             if (hw <= 0) continue;
             double r = hw * 0.72;
-            double dx = cx - r0.X;
-            double dy = cy - r0.Y;
+            double dx = screenX - r0.X;
+            double dy = screenY - r0.Y;
             if (dx * dx + dy * dy <= r * r) return r0;
         }
         return null;
@@ -3840,12 +3839,9 @@ public sealed class DshPet : Form {
                 _riceGrab.Grounded = false;
                 _riceGrab.Bounces = 0;              // a fresh throw gets fresh bounces
                 ThrowReset();                       // the throw is measured from here
-                // Client coords == screen coords (window origin is the screen origin),
-                // so the grab offset is simply mouse minus bowl centre. Adding _offX/
-                // _offY here made _riceGrabY ~1000 too big, and the first mouse move
-                // then teleported the bowl to the top of the screen.
-                _riceGrabX = e.X - _riceGrab.X;
-                _riceGrabY = e.Y - _riceGrab.Y;
+                Point sp = Cursor.Position;
+                _riceGrabX = sp.X - _riceGrab.X;
+                _riceGrabY = sp.Y - _riceGrab.Y;
                 return;
             }
             // Double-click on her head knocks the pot off. Checked before the widget
